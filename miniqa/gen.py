@@ -13,12 +13,10 @@ def generate(path):
     with open(path, "r", encoding="utf-8") as f:
         tree = ast.parse(f.read(), filename=path)
 
-    out = [
-        "from miniqa import test, assert_equal, assert_raises",
-        "",
-        "",
-    ]
+    out = ["from miniqa import TestCase, test, assert_equal, assert_raises", "", ""]
     found = 0
+
+    # 顶层函数 -> @test 函数
     for node in tree.body:
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
             found += 1
@@ -29,8 +27,27 @@ def generate(path):
             out.append(f"    # result = {node.name}({argstr})")
             out.append(f"    # assert_equal(result, <期望结果>)")
             out.append("")
+
+    # 类 -> TestCase 子类（每个公开方法一个用例）
+    for node in tree.body:
+        if isinstance(node, ast.ClassDef):
+            found += 1
+            out.append(f"class Test{node.name}(TestCase):")
+            out.append("    def setup(self):")
+            out.append("        self.obj = <被测对象的实例化>")
+            out.append("")
+            for item in node.body:
+                if isinstance(item, (ast.FunctionDef, ast.AsyncFunctionDef)) and not item.name.startswith("_"):
+                    args = [a.arg for a in item.args.args if a.arg != "self"]
+                    argstr = ", ".join(args)
+                    out.append(f"    def test_{item.name}(self):")
+                    out.append(f"        # result = self.obj.{item.name}({argstr})")
+                    out.append(f"        # assert_equal(result, <期望结果>)")
+                    out.append("")
+            out.append("")
+
     if found == 0:
-        out.append("# 未在该文件中发现顶层函数，可手动为类方法补充 TestCase。")
+        out.append("# 未在该文件中发现可生成的函数或类。")
         out.append("")
     return "\n".join(out)
 
